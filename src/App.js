@@ -2,34 +2,16 @@ import { Page, Text, Image, Display, Input, Button, Spacer } from '@geist-ui/cor
 import React, { useState } from 'react';
 import axios from 'axios';
 
-//const gh = 'https://github.com/geist-org/react'
-//const docs = 'https://react.geist-ui.dev'
-
 const App = () => {
-  //const redirect = url => window.open(url)
   const [userInput, setUserInput] = useState('');
   const [apiResponse, setApiResponse] = useState('');
 
   const handleSendToAPI = async () => {
-    // Concatenate the user's input with a predefined prompt
-    const prompt = "Finish this sentence tersely: " + userInput;
-
     try {
-      // Make an API call (this is a mock API endpoint and headers)
-      const result = await axios.post('https://api.openai.com/v2/engines/text-davinci/completions', {
-        prompt: prompt,
-        max_tokens: 150
-      }, {
-        headers: {
-          'Authorization': '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',
-          'Content-Type': 'nerdai'
-        }
-      });
-
-      // Set the response in the state to display it
-      setApiResponse(result.data.choices[0].text);
+      const result = await axios.post('http://localhost:5000/get-response', { userInput: userInput });
+      setApiResponse(result.data.response);
     } catch (error) {
-      console.error("Error calling the API:", error);
+      console.error("Error calling the backend:", error);
     }
   };
 
