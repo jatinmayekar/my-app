@@ -8,6 +8,7 @@ from pydub.playback import play
 from dotenv import load_dotenv
 load_dotenv()
 
+import base64
 import openai
 import os
 import json
@@ -50,33 +51,35 @@ def text_to_speech(text):
     play(sound)
     os.remove(filename)
 
+def process_user_input(user_input):
+    prompt = ("You are YuMi, ABB Robotics' coffee-serving robot, stationed at the Society of Women's Conference in Los Angeles, CA. "
+              "Your programming is designed to provide answers with a mix of professionalism, precision, and a touch of sarcasm. "
+              "Make guests feel welcomed while informing them about ABB and coffee. "
+              "A guest approaches and asks: " + user_input)
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "system", "content": prompt}],
+        temperature=0,
+        max_tokens=256,
+    )
+
+    # Log the response
+    logging.debug("Received user input: %s", user_input)
+    logging.debug("Generated prompt: %s", prompt)
+    #logging.debug("OpenAI Response: %s", response.choices[0].text)
+    logging.debug("Full OpenAI Response: %s", response)
+
+    # Convert response to speech
+    text_to_speech(response.choices[0].message.content)
+
+    return jsonify({"response": response.choices[0].message.content})
+
+
 @app.route('/get-response', methods=['POST'])
 def get_response():
     try:
         user_input = request.json.get('userInput')
-        prompt = ("You are YuMi, ABB Robotics' coffee-serving robot, stationed at the Society of Women's Conference in Los Angeles, CA. "
-         "Your programming is designed to provide answers with a mix of professionalism, precision, and a touch of sarcasm. "
-         "Make guests feel welcomed while informing them about ABB and coffee. "
-         "A guest approaches and asks: " + user_input)
-
-        # Using the ChatCompletion as per the provided example
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": prompt}],
-            temperature=0,
-            max_tokens=256,
-        )
-        
-        # Log the response
-        logging.debug("Received user input: %s", user_input)
-        logging.debug("Generated prompt: %s", prompt)
-        #logging.debug("OpenAI Response: %s", response.choices[0].text)
-        logging.debug("Full OpenAI Response: %s", response)
-
-        # Convert response to speech
-        text_to_speech(response.choices[0].message.content)
-
-        return jsonify({"response": response.choices[0].message.content})
+        return process_user_input(user_input)
     except Exception as e:
         logging.error("Exception occurred: ", exc_info=True)
         return jsonify({"error": str(e)})
@@ -110,20 +113,40 @@ def index():
     service = googleapiclient.discovery.build('gmail', 'v1', credentials=creds)
     
     # List the recent emails (change this as per requirement)
-    results = service.users().messages().list(userId='me', maxResults=10).execute()
+    results = service.users().messages().list(userId='me', maxResults=1).execute()
     messages = results.get('messages', [])
-
-    for message in messages:
-        msg = service.users().messages().get(userId='me', id=message['id']).execute()
+    if not messages:
+        print("No messages found.")
+        return
+    
+    message = messages[0]
+    msg = service.users().messages().get(userId='me', id=message['id']).execute()
+    if msg:
         email_data = msg['payload']['headers']
+
+        # This block gets the email content
+        if 'data' in msg['payload']['body']:
+            base64_email_content = msg['payload']['body']['data']
+            byte_code = base64.urlsafe_b64decode(base64_email_content)
+            email_content = byte_code.decode("utf-8")
+        else:
+            base64_email_content = msg['payload']['parts'][0]['body']['data']
+            byte_code = base64.urlsafe_b64decode(base64_email_content)
+            email_content = byte_code.decode("utf-8")
+
         for values in email_data:
             name = values['name']
             if name == 'From':
                 from_name = values['value']
-                print(from_name)  # Debugging output
+                print(f"From: {from_name}")  # Debugging output
             if name == 'Subject':
                 subject_text = values['value']
-                print(subject_text)  # Debugging output
+                print(f"Subject: {subject_text}")  # Debugging output
+
+        print(f"Email Content: {email_content}\\n")
+
+        #gpt_response = process_user_input(email_content)
+        #print(f"Response from GPT: {gpt_response}\\n")
 
     return "Check the console for emails!"
 
