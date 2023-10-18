@@ -24,11 +24,14 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 CLIENT_ID = os.getenv("CLIENT_ID")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+#openai.api_key = os.getenv("OPENAI_API_KEY")
+#CLIENT_SECRET = "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"
+#CLIENT_ID = "842674628740-4t4scremj0f4t1gdv27nqvsejpo3dd60.apps.googleusercontent.com"
+#REDIRECT_URI = "http://localhost:5000/oauth2callback"
 
 app = Flask(__name__)
 CORS(app)  # Handle CORS
-
 app.config['SESSION_PERMANENT'] = False
 app.config['SESSION_TYPE'] = 'filesystem'
 app.config['SECRET_KEY'] = os.urandom(24)
@@ -36,8 +39,7 @@ Session(app)
 
 # Global level SCOPES variable
 SCOPES = [
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/pubsub'
+    'https://www.googleapis.com/auth/gmail.readonly'
 ]
 
 def text_to_speech(text):
