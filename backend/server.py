@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, redirect, url_for
 from flask_cors import CORS
 from flask import Flask, session
-from flask_session import Session  # you'll need to install Flask-Session
+from flask_session import Session
 from gtts import gTTS
 from pydub import AudioSegment
 from pydub.playback import play
@@ -20,16 +20,12 @@ import google_auth_oauthlib.flow
 import googleapiclient.discovery
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from google.cloud import pubsub_v1
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 CLIENT_ID = os.getenv("CLIENT_ID")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
-
-#openai.api_key = os.getenv("OPENAI_API_KEY")
-#CLIENT_SECRET = "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"
-#CLIENT_ID = "842674628740-4t4scremj0f4t1gdv27nqvsejpo3dd60.apps.googleusercontent.com"
-#REDIRECT_URI = "http://localhost:5000/oauth2callback"
 
 app = Flask(__name__)
 CORS(app)  # Handle CORS
@@ -40,7 +36,8 @@ Session(app)
 
 # Global level SCOPES variable
 SCOPES = [
-    'https://www.googleapis.com/auth/gmail.readonly'
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.modify'
 ]
 
 def text_to_speech(text):
@@ -66,14 +63,23 @@ def process_user_input(user_input):
     # Log the response
     logging.debug("Received user input: %s", user_input)
     logging.debug("Generated prompt: %s", prompt)
-    #logging.debug("OpenAI Response: %s", response.choices[0].text)
-    logging.debug("Full OpenAI Response: %s", response)
+    logging.debug("OpenAI Response: %s", response.choices[0].text)
+    #logging.debug("Full OpenAI Response: %s", response)
 
     # Convert response to speech
     text_to_speech(response.choices[0].message.content)
-
     return jsonify({"response": response.choices[0].message.content})
 
+def watch_gmail_account(service, user_id, topic_name):
+    request = {
+        'labelIds': ['INBOX'],
+        'topicName': f'projects/aiwebapp-1/topics/{topic_name}'
+    }
+    #service.users().watch(userId=user_id, body=request).execute()
+    try:
+        service.users().watch(userId=user_id, body=request).execute()
+    except googleapiclient.errors.HttpError as error:
+        print(f'An error occurred: {error}')
 
 @app.route('/get-response', methods=['POST'])
 def get_response():
@@ -94,6 +100,56 @@ def get_response_audio():
     except Exception as e:
         logging.error("Exception occurred: ", exc_info=True)
         return jsonify({"error": str(e)})
+    
+@app.route('/notifications', methods=['POST'])
+def notifications():
+    # Validation and message processing logic
+    envelope = json.loads(request.data.decode('utf-8'))
+    payload = base64.b64decode(envelope['message']['data'])
+    attributes = envelope['message']['attributes']
+
+    # Reinitialize the Gmail API client
+    creds_info = session['credentials']
+    creds = google.oauth2.credentials.Credentials(
+        token=creds_info['token'],
+        refresh_token=creds_info['refresh_token'],
+        token_uri=creds_info['token_uri'],
+        client_id=creds_info['client_id'],
+        client_secret=creds_info['client_secret'],
+        scopes=creds_info['scopes']
+    )
+    # Implement this function
+    service = googleapiclient.discovery.build('gmail', 'v1', credentials=creds)
+    
+    # Fetch the latest email
+    results = service.users().messages().list(userId='me', maxResults=1).execute()
+    messages = results.get('messages', [])
+    if not messages:
+        print("No messages found.")
+        return '', 204
+    
+    message = messages[0]
+    msg = service.users().messages().get(userId='me', id=message['id']).execute()
+    
+    email_data = msg['payload']['headers']
+    for values in email_data:
+        name = values['name']
+        if name == 'From':
+            from_name = values['value']
+            print(f"From: {from_name}")
+        if name == 'Subject':
+            subject_text = values['value']
+            print(f"Subject: {subject_text}")
+    
+    if 'data' in msg['payload']['body']:
+        base64_email_content = msg['payload']['body']['data']
+    else:
+        base64_email_content = msg['payload']['parts'][0]['body']['data']
+    byte_code = base64.urlsafe_b64decode(base64_email_content)
+    email_content = byte_code.decode("utf-8")
+    print(f"Email Content: {email_content}")
+
+    return '', 204
 
 @app.route('/')
 def index():
@@ -111,6 +167,11 @@ def index():
     )
 
     service = googleapiclient.discovery.build('gmail', 'v1', credentials=creds)
+
+    # Deprecated: OAuth2.0 feature is complex and not needed for proof-of-concept. Use IMAP methods instead
+    # print("Starting watch...")
+    # Add the watch function for projects/aiwebapp-1/topics/gmail_notifications
+    # watch_gmail_account(service, 'me', 'gmail_notifications')
     
     # List the recent emails (change this as per requirement)
     results = service.users().messages().list(userId='me', maxResults=1).execute()
@@ -168,10 +229,10 @@ def authorize():
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         include_granted_scopes='true'
+        #prompt='consent' # force re-authorization
     )
 
     session['state'] = state
-
     return redirect(authorization_url)
 
 @app.route('/oauth2callback')
@@ -218,5 +279,4 @@ if __name__ == '__main__':
     #app.debug=True
 
 # add push notif - fetch automatically new emails
-# get content from the email
 # send to chatgpt
