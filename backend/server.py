@@ -12,6 +12,10 @@ import base64
 import openai
 import os
 import json
+import imaplib
+import email
+from email.header import decode_header
+from datetime import datetime, timedelta
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -169,9 +173,9 @@ def index():
     service = googleapiclient.discovery.build('gmail', 'v1', credentials=creds)
 
     # Deprecated: OAuth2.0 feature is complex and not needed for proof-of-concept. Use IMAP methods instead
-    # print("Starting watch...")
+    print("Starting watch...")
     # Add the watch function for projects/aiwebapp-1/topics/gmail_notifications
-    # watch_gmail_account(service, 'me', 'gmail_notifications')
+    watch_gmail_account(service, 'me', 'gmail_notifications')
     
     # List the recent emails (change this as per requirement)
     results = service.users().messages().list(userId='me', maxResults=1).execute()
